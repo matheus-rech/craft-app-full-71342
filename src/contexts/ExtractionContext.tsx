@@ -199,7 +199,7 @@ export const ExtractionProvider = ({ children }: { children: ReactNode }) => {
     console.log('Extraction saved locally:', extraction);
     
     // Save extractions to localStorage for persistence
-    try {
+id: crypto.randomUUID(),
       const savedExtractions = JSON.parse(localStorage.getItem('saved_extractions') || '[]');
       const newExtraction: Extraction = {
         ...extraction,
