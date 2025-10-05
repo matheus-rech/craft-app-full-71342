@@ -81,7 +81,7 @@ Your app is ready to deploy! Choose the option that best fits your needs.
 docker build -t clinical-extraction-app .
 
 # Run container
-docker run -p 80:80 clinical-extraction-app
+docker run -p 8080:80 clinical-extraction-app
 ```
 
 ### ✅ Pros:
