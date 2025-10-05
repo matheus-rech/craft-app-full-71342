@@ -60,7 +60,7 @@ export const PdfAnnotationCanvas = ({
       
       // Create annotation object similar to Supabase structure
       const newAnnotation = {
-        id: `local_${Date.now()}_${Math.random()}`,
+id: `local_${crypto.randomUUID()}`,
         document_id: documentId,
         page_number: pageNumber,
         annotation_type: annotationData.annotation_type,
