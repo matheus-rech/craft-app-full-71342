@@ -145,8 +145,12 @@ export const ExtractionProvider = ({ children }: { children: ReactNode }) => {
       // Load saved extractions
       const savedExtractions = localStorage.getItem('saved_extractions');
       if (savedExtractions) {
-        const extractions = JSON.parse(savedExtractions);
-        setExtractions(extractions);
+        try {
+          const extractions = JSON.parse(savedExtractions);
+          setExtractions(extractions);
+        } catch (e) {
+          console.warn('Corrupted saved_extractions in localStorage, ignoring:', e);
+        }
       }
     } catch (error) {
       console.error('Failed to load saved data:', error);
