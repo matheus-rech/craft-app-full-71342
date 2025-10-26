@@ -5,13 +5,13 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
-import { ChevronLeft, ChevronRight, Upload, AlertCircle, Pen as PenIcon } from "lucide-react";
+import { ChevronLeft, ChevronRight, Upload, Library, AlertCircle, Pen as PenIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
 import 'react-pdf/dist/esm/Page/TextLayer.css';
-// Removed Supabase import for local-only operation
-// DocumentLibrary removed for local-only operation
+import { supabase } from "@/integrations/supabase/client";
+import DocumentLibrary from "./DocumentLibrary";
 import { PdfHighlightLayer } from "./PdfHighlightLayer";
 import { PdfAnnotationCanvas } from "./PdfAnnotationCanvas";
 import { AnnotationToolbar } from "./AnnotationToolbar";
@@ -91,16 +91,48 @@ const PdfPanel = () => {
     }
 
     try {
-      // Create a local URL for the PDF file
-      const fileUrl = URL.createObjectURL(file);
+      const fileName = `${Date.now()}-${file.name}`;
       
-      // Set document info for local use
-      const documentId = `local_${Date.now()}`;
-      setCurrentDocumentId(documentId);
+      // Upload with progress tracking
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('pdf_documents')
+        .upload(fileName, file);
+
+      if (uploadError) {
+        if (uploadError.message.includes('storage')) {
+          throw new Error('Storage quota exceeded. Please contact support.');
+        }
+        throw uploadError;
+      }
+
+      // Get signed URL for private bucket (valid for 1 hour)
+      const { data: signedUrlData, error: urlError } = await supabase.storage
+        .from('pdf_documents')
+        .createSignedUrl(fileName, 3600);
+
+      if (urlError) throw urlError;
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+
+      const { data: docData, error: docError } = await supabase
+        .from('documents')
+        .insert({
+          name: file.name,
+          storage_path: fileName,
+          file_size: file.size,
+          user_id: user.id,
+        })
+        .select()
+        .single();
+
+      if (docError) throw docError;
+
+      setCurrentDocumentId(docData.id);
       setCurrentDocumentName(file.name);
-      setPdfFile(fileUrl);
+      setPdfFile(signedUrlData.signedUrl);
       
-      toast.success('PDF loaded successfully');
+      toast.success('PDF uploaded successfully');
     } catch (error: any) {
       console.error('Error loading PDF:', error);
       const errorMessage = error.message || 'Failed to load PDF';
@@ -111,7 +143,42 @@ const PdfPanel = () => {
     }
   };
 
-  // loadFromLibrary function removed for local-only operation
+  const loadFromLibrary = async (doc: any) => {
+    setIsLoading(true);
+    try {
+      // Get signed URL for private bucket (valid for 1 hour)
+      const { data: signedUrlData, error: urlError } = await supabase.storage
+        .from('pdf_documents')
+        .createSignedUrl(doc.storage_path, 3600);
+
+      if (urlError) throw urlError;
+
+      setCurrentDocumentId(doc.id);
+      setCurrentDocumentName(doc.name);
+      setPdfFile(signedUrlData.signedUrl);
+      
+      // Load extracted text into formData for AI extraction
+      const { data: pdfExtractions } = await supabase
+        .from('pdf_extractions')
+        .select('full_text, page_number')
+        .eq('document_id', doc.id)
+        .order('page_number');
+
+      if (pdfExtractions && pdfExtractions.length > 0) {
+        const fullText = pdfExtractions
+          .map(e => e.full_text)
+          .join('\n\n');
+        updateFormData('_pdfFullText', fullText);
+      }
+      
+      toast.success('PDF loaded from library');
+    } catch (error) {
+      console.error('Error loading PDF from library:', error);
+      toast.error('Failed to load PDF');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const onDocumentLoadSuccess = async ({ numPages }: { numPages: number }) => {
     setNumPages(numPages);
@@ -130,8 +197,19 @@ const PdfPanel = () => {
         await extractAllPagesText(numPages);
         toast.success(`Successfully extracted text from ${numPages} pages`);
         
-        // For local operation, we'll just use the current extracted text
-        console.log('Text extraction completed for local PDF');
+        // Load extracted text into formData for AI extraction
+        const { data: pdfExtractions } = await supabase
+          .from('pdf_extractions')
+          .select('full_text, page_number')
+          .eq('document_id', currentDocumentId)
+          .order('page_number');
+
+        if (pdfExtractions && pdfExtractions.length > 0) {
+          const fullText = pdfExtractions
+            .map(e => e.full_text)
+            .join('\n\n');
+          updateFormData('_pdfFullText', fullText);
+        }
       } catch (error: any) {
         console.error('Extraction error:', error);
         const errorMsg = error.message || 'Text extraction failed';
@@ -210,14 +288,17 @@ const PdfPanel = () => {
           const progress = Math.round((pageNum / totalPgs) * 100);
           setExtractionProgress(progress);
 
-          // For local operation, just log the extraction
+          // Save in batches
           if (extractions.length >= batchSize || pageNum === totalPgs) {
-            console.log(`Extracted text from batch ending at page ${pageNum}`);
-            
-            // Save full text to form data for AI extraction if needed
-            if (pageNum === totalPgs) {
-              const allText = extractions.map(e => e.full_text).join('\n\n');
-              updateFormData('_pdfFullText', allText);
+            const { error } = await supabase
+              .from('pdf_extractions')
+              .upsert(extractions, {
+                onConflict: 'document_id,page_number',
+              });
+
+            if (error) {
+              console.error('Failed to save extraction batch:', error);
+              throw new Error(`Failed to save page ${pageNum - extractions.length + 1}-${pageNum}`);
             }
             
             extractions.length = 0; // Clear batch
@@ -229,8 +310,15 @@ const PdfPanel = () => {
         }
       }
 
-      // For local operation, just log completion
-      console.log(`Text extraction completed for ${totalPgs} pages`);
+      // Update document with total pages
+      const { error: updateError } = await supabase
+        .from('documents')
+        .update({ total_pages: totalPgs })
+        .eq('id', currentDocumentId);
+
+      if (updateError) {
+        console.error('Failed to update document:', updateError);
+      }
 
     } catch (error: any) {
       console.error('Extraction error:', error);
@@ -364,7 +452,20 @@ const PdfPanel = () => {
           Upload PDF
         </Button>
 
-        {/* Library functionality removed for local-only operation */}
+        <Dialog>
+          <DialogTrigger asChild>
+            <Button size="sm" variant="secondary">
+              <Library className="w-4 h-4 mr-2" />
+              Library
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-md max-h-[80vh]">
+            <DialogHeader>
+              <DialogTitle>PDF Library</DialogTitle>
+            </DialogHeader>
+            <DocumentLibrary onLoadDocument={loadFromLibrary} />
+          </DialogContent>
+        </Dialog>
 
         <Button
           size="sm"
