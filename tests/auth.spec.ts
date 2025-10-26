@@ -1,60 +1,45 @@
 import { test, expect } from '@playwright/test';
 
-test.describe('Authentication Flow', () => {
+test.describe('OAuth Authentication Flow', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/auth');
   });
 
-  test('should display login and signup tabs', async ({ page }) => {
-    await expect(page.getByRole('tab', { name: 'Sign In' })).toBeVisible();
-    await expect(page.getByRole('tab', { name: 'Sign Up' })).toBeVisible();
+  test('should display OAuth provider buttons', async ({ page }) => {
+    await expect(page.getByRole('button', { name: /Continue with GitHub/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Continue with Google/i })).toBeVisible();
   });
 
-  test('should show validation error for invalid email', async ({ page }) => {
-    await page.getByRole('tab', { name: 'Sign In' }).click();
-    await page.fill('#login-email', 'invalid-email');
-    await page.fill('#login-password', 'password123');
-    await page.getByRole('button', { name: 'Sign In' }).click();
-    
-    // Browser native validation should trigger
-    const emailInput = page.locator('#login-email');
-    await expect(emailInput).toHaveAttribute('type', 'email');
+  test('should display page title and description', async ({ page }) => {
+    await expect(page.locator('text=Clinical Extraction System')).toBeVisible();
+    await expect(page.locator('text=Sign in to access AI-powered clinical data extraction')).toBeVisible();
   });
 
-  test('should navigate to signup tab and display all fields', async ({ page }) => {
-    await page.getByRole('tab', { name: 'Sign Up' }).click();
-    
-    await expect(page.locator('#signup-name')).toBeVisible();
-    await expect(page.locator('#signup-email')).toBeVisible();
-    await expect(page.locator('#signup-password')).toBeVisible();
-    await expect(page.locator('#signup-confirm')).toBeVisible();
+  test('should display security message', async ({ page }) => {
+    await expect(page.locator('text=Secure authentication for HIPAA-compliant data extraction')).toBeVisible();
   });
 
-  test('should show error for mismatched passwords', async ({ page }) => {
-    await page.getByRole('tab', { name: 'Sign Up' }).click();
+  test('should show loading state when GitHub button is clicked', async ({ page }) => {
+    const githubButton = page.getByRole('button', { name: /Continue with GitHub/i });
     
-    await page.fill('#signup-name', 'Test User');
-    await page.fill('#signup-email', 'test@example.com');
-    await page.fill('#signup-password', 'password123');
-    await page.fill('#signup-confirm', 'differentpassword');
+    // Click the button
+    await githubButton.click();
     
-    await page.getByRole('button', { name: 'Create Account' }).click();
-    
-    // Toast should appear with error message
-    await expect(page.locator('text=Passwords do not match')).toBeVisible({ timeout: 3000 });
+    // Button should show loading state
+    await expect(page.getByRole('button', { name: /Connecting/i })).toBeVisible({ timeout: 1000 });
   });
 
-  test('should show error for short password', async ({ page }) => {
-    await page.getByRole('tab', { name: 'Sign Up' }).click();
+  test('should have proper button styling and icons', async ({ page }) => {
+    const githubButton = page.getByRole('button', { name: /Continue with GitHub/i });
+    const googleButton = page.getByRole('button', { name: /Continue with Google/i });
     
-    await page.fill('#signup-name', 'Test User');
-    await page.fill('#signup-email', 'test@example.com');
-    await page.fill('#signup-password', '123');
-    await page.fill('#signup-confirm', '123');
+    // Buttons should be visible and have proper size
+    await expect(githubButton).toBeVisible();
+    await expect(googleButton).toBeVisible();
     
-    await page.getByRole('button', { name: 'Create Account' }).click();
-    
-    await expect(page.locator('text=Password must be at least 6 characters')).toBeVisible({ timeout: 3000 });
+    // Verify icons are present (checking SVG elements)
+    await expect(page.locator('button:has-text("Continue with GitHub") svg')).toBeVisible();
+    await expect(page.locator('button:has-text("Continue with Google") svg')).toBeVisible();
   });
 
   test('should redirect authenticated users to main app', async ({ page, context }) => {

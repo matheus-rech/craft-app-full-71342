@@ -113,7 +113,7 @@ const MiniPDFViewer = ({ className = "" }) => {
         }
 
         const pdfBytes = await newPdfDoc.save();
-        const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+        const blob = new Blob([pdfBytes.buffer as ArrayBuffer], { type: 'application/pdf' });
         
         if (saveAs) {
           setIsSaveAsModalOpen(true);
@@ -146,7 +146,7 @@ const MiniPDFViewer = ({ className = "" }) => {
         }
 
         const pdfBytes = await newPdfDoc.save();
-        const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+        const blob = new Blob([pdfBytes.buffer as ArrayBuffer], { type: 'application/pdf' });
         const link = document.createElement('a');
         link.href = URL.createObjectURL(blob);
         link.download = saveAsFileName.trim();
@@ -175,7 +175,7 @@ const MiniPDFViewer = ({ className = "" }) => {
         copiedPages.forEach((page) => existingPdfDoc.addPage(page));
         
         const mergedPdfBytes = await existingPdfDoc.save();
-        const mergedPdfBlob = new Blob([mergedPdfBytes], { type: 'application/pdf' });
+        const mergedPdfBlob = new Blob([mergedPdfBytes.buffer as ArrayBuffer], { type: 'application/pdf' });
         const mergedPdfUrl = URL.createObjectURL(mergedPdfBlob);
         
         setPdfFile(mergedPdfUrl);
